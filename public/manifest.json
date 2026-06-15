@@ -1,0 +1,12 @@
+{
+  "name": "Vessel Status Monitor",
+  "version": "0.1.0",
+  "manifest_version": 1,
+  "action": {
+    "title": "Vessel Monitor",
+    "icon": "/icon.svg",
+    "popover": "/",
+    "height": 620,
+    "width": 900
+  }
+}
