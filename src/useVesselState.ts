@@ -4,6 +4,9 @@ import type { VesselState, WallStats, RoomStats } from './types';
 import { DEFAULT_STATE, METADATA_KEY, ensureWalls } from './dugongData';
 
 const BROADCAST_CHANNEL = 'com.vessel.state.sync';
+// Same key as OBR metadata so a schema bump (version change) automatically
+// invalidates the local cache alongside the remote state.
+const LOCAL_KEY = METADATA_KEY;
 
 function mergeDeep(defaults: VesselState, saved: Partial<VesselState>): VesselState {
   const rooms = { ...defaults.rooms, ...(saved.rooms ?? {}) };
@@ -11,8 +14,24 @@ function mergeDeep(defaults: VesselState, saved: Partial<VesselState>): VesselSt
   return { rooms, walls };
 }
 
+function loadLocal(): VesselState | null {
+  try {
+    const raw = localStorage.getItem(LOCAL_KEY);
+    if (!raw) return null;
+    return mergeDeep(DEFAULT_STATE, JSON.parse(raw) as Partial<VesselState>);
+  } catch {
+    return null;
+  }
+}
+
+function saveLocal(s: VesselState) {
+  try { localStorage.setItem(LOCAL_KEY, JSON.stringify(s)); } catch { /* quota / private mode */ }
+}
+
 export function useVesselState() {
-  const [state, setState] = useState<VesselState>(DEFAULT_STATE);
+  // Initialise synchronously from localStorage so the last-known state
+  // renders immediately on F5 — no blank flash while waiting for OBR.
+  const [state, setState] = useState<VesselState>(() => loadLocal() ?? DEFAULT_STATE);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -21,29 +40,42 @@ export function useVesselState() {
     let unsubBroadcast: (() => void) | null = null;
 
     OBR.onReady(async () => {
+      // OBR room metadata is the authoritative source; overwrite local cache on load.
       try {
         const meta = await OBR.room.getMetadata();
         const saved = meta[METADATA_KEY] as Partial<VesselState> | undefined;
-        if (saved && isMounted) setState(mergeDeep(DEFAULT_STATE, saved));
+        if (saved && isMounted) {
+          const merged = mergeDeep(DEFAULT_STATE, saved);
+          setState(merged);
+          saveLocal(merged);
+        }
       } catch {
-        // no saved state yet
+        // no saved state yet — keep whatever localStorage gave us
       }
 
       if (!isMounted) return;
 
-      // Primary real-time sync: broadcast pushes state to all connected clients immediately
+      // Primary real-time sync: broadcast from GM → all connected clients.
       unsubBroadcast = OBR.broadcast.onMessage(
         BROADCAST_CHANNEL,
         (event: { data: unknown; connectionId: string }) => {
           const saved = event.data as Partial<VesselState>;
-          if (saved) setState(mergeDeep(DEFAULT_STATE, saved));
+          if (saved) {
+            const merged = mergeDeep(DEFAULT_STATE, saved);
+            setState(merged);
+            saveLocal(merged); // keep local cache current for next F5
+          }
         },
       );
 
-      // Fallback: metadata change events cover reconnects and missed broadcasts
+      // Fallback: metadata change events (reconnects, missed broadcasts).
       unsubMeta = OBR.room.onMetadataChange((meta: Record<string, unknown>) => {
         const saved = meta[METADATA_KEY] as Partial<VesselState> | undefined;
-        if (saved) setState(mergeDeep(DEFAULT_STATE, saved));
+        if (saved) {
+          const merged = mergeDeep(DEFAULT_STATE, saved);
+          setState(merged);
+          saveLocal(merged);
+        }
       });
 
       setReady(true);
@@ -57,13 +89,12 @@ export function useVesselState() {
   }, []);
 
   const persist = useCallback(async (next: VesselState) => {
-    // Persist to room metadata so new/reconnected clients load the latest state
+    saveLocal(next); // synchronous — survives F5 even if OBR calls fail
     try {
       await OBR.room.setMetadata({ [METADATA_KEY]: next });
     } catch (e) {
       console.warn('[Vessel] setMetadata failed:', e);
     }
-    // Push to all other connected clients immediately
     try {
       await OBR.broadcast.sendMessage(BROADCAST_CHANNEL, next, { destination: 'REMOTE' });
     } catch (e) {
