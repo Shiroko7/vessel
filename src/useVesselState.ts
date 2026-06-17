@@ -4,9 +4,9 @@ import type { VesselState, WallStats, RoomStats } from './types';
 import { DEFAULT_STATE, METADATA_KEY, ensureWalls } from './dugongData';
 
 const BROADCAST_CHANNEL = 'com.vessel.state.sync';
-// Same key as OBR metadata so a schema bump (version change) automatically
-// invalidates the local cache alongside the remote state.
-const LOCAL_KEY = METADATA_KEY;
+// Stable key — intentionally NOT versioned so deploys and schema bumps
+// never wipe the local cache. mergeDeep + ensureWalls handle any drift.
+const LOCAL_KEY = 'com.vessel.statusmonitor.state.local';
 
 function mergeDeep(defaults: VesselState, saved: Partial<VesselState>): VesselState {
   const rooms = { ...defaults.rooms, ...(saved.rooms ?? {}) };
