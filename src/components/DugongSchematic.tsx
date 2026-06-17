@@ -80,10 +80,13 @@ export function DugongSchematic({ state, theme, editMode, onSelectWall, onSelect
     const d = theme.damage;
     const pct = maxHp > 0 ? hp / maxHp : 0;
     if (pct <= 0) return d.destroyed;
-    if (pct < 0.25) return lerpColor(d.destroyed, d.critical, pct / 0.25);
-    if (pct < 0.5) return lerpColor(d.critical, d.heavy, (pct - 0.25) / 0.25);
-    if (pct < 0.8) return lerpColor(d.heavy, d.damaged, (pct - 0.5) / 0.3);
-    return lerpColor(d.damaged, d.pristine, (pct - 0.8) / 0.2);
+    // Each band shades at most 15% toward the next-lower stage at its floor so
+    // adjacent HP values show a subtle shift without crossing hue zones.
+    const T = 0.15;
+    if (pct >= 0.8) return lerpColor(d.pristine, d.damaged, T * (1 - (pct - 0.8) / 0.2));
+    if (pct >= 0.5) return lerpColor(d.damaged, d.heavy,   T * (1 - (pct - 0.5) / 0.3));
+    if (pct >= 0.25) return lerpColor(d.heavy,   d.critical, T * (1 - (pct - 0.25) / 0.25));
+    return lerpColor(d.critical, d.destroyed, T * (1 - pct / 0.25));
   }
   function segOpacity(hp: number, maxHp: number): number {
     const pct = maxHp > 0 ? hp / maxHp : 0;
