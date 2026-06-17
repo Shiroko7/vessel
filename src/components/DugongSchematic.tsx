@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { VesselState, WallStats, RoomStats } from '../types';
-import { getDamageLevel } from '../types';
 import type { Theme } from '../themes';
 import { HULL, CONNING, SNAP_Y, deriveWalls } from '../dugongData';
 
@@ -68,14 +67,29 @@ export function DugongSchematic({ state, theme, editMode, onSelectWall, onSelect
     ? topRooms.reduce((s, r) => s + r.x + r.w / 2, 0) / topRooms.length
     : 620;
 
-  function segColor(s: WallStats): string {
-    return theme.damage[getDamageLevel(s.hp, s.maxHp)];
+  function lerpColor(a: string, b: string, t: number): string {
+    const parse = (h: string): [number, number, number] => {
+      const v = parseInt(h.replace('#', ''), 16);
+      return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+    };
+    const [ar, ag, ab] = parse(a);
+    const [br, bg, bb] = parse(b);
+    return `rgb(${Math.round(ar + (br - ar) * t)},${Math.round(ag + (bg - ag) * t)},${Math.round(ab + (bb - ab) * t)})`;
   }
-  function segOpacity(s: WallStats): number {
-    const lvl = getDamageLevel(s.hp, s.maxHp);
-    if (lvl === 'destroyed') return 0.18;
-    if (lvl === 'critical') return 0.6;
-    return 1;
+  function segColor(hp: number, maxHp: number): string {
+    const d = theme.damage;
+    const pct = maxHp > 0 ? hp / maxHp : 0;
+    if (pct <= 0) return d.destroyed;
+    if (pct < 0.25) return lerpColor(d.destroyed, d.critical, pct / 0.25);
+    if (pct < 0.5) return lerpColor(d.critical, d.heavy, (pct - 0.25) / 0.25);
+    if (pct < 0.8) return lerpColor(d.heavy, d.damaged, (pct - 0.5) / 0.3);
+    return lerpColor(d.damaged, d.pristine, (pct - 0.8) / 0.2);
+  }
+  function segOpacity(hp: number, maxHp: number): number {
+    const pct = maxHp > 0 ? hp / maxHp : 0;
+    if (pct <= 0) return 0.18;
+    if (pct <= 0.25) return 0.18 + (pct / 0.25) * 0.42;
+    return 0.6 + ((pct - 0.25) / 0.75) * 0.4;
   }
 
   function toSvg(e: React.PointerEvent | React.MouseEvent): { x: number; y: number } {
@@ -268,7 +282,7 @@ export function DugongSchematic({ state, theme, editMode, onSelectWall, onSelect
           const w = state.walls[dw.id];
           if (!w) return null;
           const common = {
-            fill: segColor(w), opacity: segOpacity(w),
+            fill: segColor(w.hp, w.maxHp), opacity: segOpacity(w.hp, w.maxHp),
             className: 'wall-seg', filter: 'url(#glow)',
             pointerEvents: (editMode ? 'none' : undefined) as React.SVGProps<SVGPathElement>['pointerEvents'],
             ...wallHandlers(dw.id),
@@ -276,6 +290,20 @@ export function DugongSchematic({ state, theme, editMode, onSelectWall, onSelect
           return dw.kind === 'rect'
             ? <rect key={dw.id} x={dw.box!.x} y={dw.box!.y} width={dw.box!.w} height={dw.box!.h} rx={2} {...common} />
             : <path key={dw.id} d={dw.path!} {...common} />;
+        })}
+
+        {/* ── Temp HP pulsing overlay (visible without hover) ── */}
+        {walls.map((dw) => {
+          const w = state.walls[dw.id];
+          if (!w || !w.tempHp) return null;
+          const common = {
+            fill: 'none', stroke: sc.temp, strokeWidth: 4,
+            className: 'temp-pulse', pointerEvents: 'none' as React.SVGProps<SVGRectElement>['pointerEvents'],
+            filter: 'url(#glow)',
+          };
+          return dw.kind === 'rect'
+            ? <rect key={`tp-${dw.id}`} x={dw.box!.x} y={dw.box!.y} width={dw.box!.w} height={dw.box!.h} rx={2} {...common} />
+            : <path key={`tp-${dw.id}`} d={dw.path!} {...common} />;
         })}
 
         {/* ── Deck gun (bottom centre, decorative) ── */}

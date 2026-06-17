@@ -27,6 +27,7 @@ export interface Theme {
     shipName: string;
     tooltipBg: string;
     accent: string;
+    temp: string;
   };
 }
 
@@ -70,6 +71,7 @@ const abyssal: Theme = {
     shipName: '#456176',
     tooltipBg: '#070b13',
     accent: '#2ee6ff',
+    temp: '#74b4ff',
   },
 };
 
@@ -113,6 +115,7 @@ const nautilus: Theme = {
     shipName: '#5e5331',
     tooltipBg: '#0c100c',
     accent: '#e6bd57',
+    temp: '#d6b96a',
   },
 };
 
@@ -156,6 +159,7 @@ const crimson: Theme = {
     shipName: '#5e2c2c',
     tooltipBg: '#100608',
     accent: '#ff6a48',
+    temp: '#ff9a6e',
   },
 };
 
@@ -199,6 +203,7 @@ const spectral: Theme = {
     shipName: '#2e5e4e',
     tooltipBg: '#050b0a',
     accent: '#4dffb0',
+    temp: '#b06eff',
   },
 };
 
