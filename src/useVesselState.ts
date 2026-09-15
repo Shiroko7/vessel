@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import OBR from '@owlbear-rodeo/sdk';
 import type { VesselState, WallStats, RoomStats } from './types';
-import { DEFAULT_STATE, METADATA_KEY, ensureWalls } from './dugongData';
+import { DEFAULT_STATE, METADATA_KEY, LEGACY_METADATA_KEYS, ensureWalls } from './dugongData';
 
 const BROADCAST_CHANNEL = 'com.vessel.state.sync';
 // Stable key — intentionally NOT versioned so deploys and schema bumps
@@ -43,7 +43,33 @@ export function useVesselState() {
       // OBR room metadata is the authoritative source; overwrite local cache on load.
       try {
         const meta = await OBR.room.getMetadata();
-        const saved = meta[METADATA_KEY] as Partial<VesselState> | undefined;
+        let saved = meta[METADATA_KEY] as Partial<VesselState> | undefined;
+
+        // Fall back to the newest legacy versioned key so a room that hasn't
+        // been migrated yet doesn't silently render DEFAULT_STATE (a fresh
+        // stable/bumped key has no data until someone writes to it).
+        const legacyKeysPresent = LEGACY_METADATA_KEYS.filter((k) => meta[k] != null);
+        if (!saved && legacyKeysPresent.length > 0) {
+          saved = meta[legacyKeysPresent[legacyKeysPresent.length - 1]] as Partial<VesselState>;
+        }
+
+        // One-time GM-only cleanup: migrate legacy data forward under the
+        // stable key and null out every legacy key so we stop hoarding
+        // duplicate ship-state snapshots in the shared 16kB room metadata
+        // budget. Read-only players skip this (no permission assumed).
+        if (isMounted && legacyKeysPresent.length > 0) {
+          const role = await OBR.player.getRole().catch(() => 'PLAYER');
+          if (role === 'GM') {
+            const cleanup: Record<string, null> = {};
+            for (const k of legacyKeysPresent) cleanup[k] = null;
+            try {
+              await OBR.room.setMetadata({ ...cleanup, [METADATA_KEY]: saved ?? DEFAULT_STATE });
+            } catch (e) {
+              console.warn('[Vessel] legacy metadata cleanup failed:', e);
+            }
+          }
+        }
+
         if (saved && isMounted) {
           const merged = mergeDeep(DEFAULT_STATE, saved);
           setState(merged);

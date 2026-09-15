@@ -168,5 +168,18 @@ export function ensureWalls(rooms: Record<string, RoomStats>, walls: Record<stri
   return out;
 }
 
-// Bumped to v11 — keel removed.
-export const METADATA_KEY = 'com.vessel.statusmonitor.state.v11';
+// Stable key — intentionally NOT versioned, same rationale as LOCAL_KEY in
+// useVesselState.ts. mergeDeep + ensureWalls already absorb schema drift on
+// load, so a schema change never needs a new key. (Previously this bumped on
+// every schema change — v3, v5, v6, v7, ... v11 — which permanently orphaned
+// a full ship-state snapshot under each old key: they're shallow-merged room
+// metadata, sharing one 16kB budget across every extension in the room, and
+// nothing ever deleted the old ones. See LEGACY_METADATA_KEYS below, which
+// useVesselState.ts uses to migrate + clean up existing rooms once.)
+export const METADATA_KEY = 'com.vessel.statusmonitor.state';
+
+/** Every versioned key this extension has ever written to room metadata. */
+export const LEGACY_METADATA_KEYS = Array.from(
+  { length: 20 },
+  (_, i) => `com.vessel.statusmonitor.state.v${i + 1}`,
+);
